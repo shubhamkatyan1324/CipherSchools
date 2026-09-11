@@ -1,39 +1,123 @@
-# AI Usage Log: Key Architectural Decisions
+# AI Usage Log: Key Architectural & Engineering Decisions
 
-This document details 4 key AI-assisted design and coding decisions made during the development of the **LLD Practice Platform**, explicitly highlighting suggestions accepted, rejected, and technical rationale.
-
----
-
-## Decision 1: Evaluator Extensibility Abstraction (Factory vs Pure Strategy)
-
-- **WHAT AI SUGGESTED**: An elaborate `EvaluatorFactory` class with dynamic reflection, plugin registries, and multi-tenant dynamic loader modules for OpenAI, Anthropic, Gemini, and Rule-Based engines.
-- **WHAT WE ACCEPTED**: Clean `Evaluator` Strategy interface and `EvaluationService` orchestration logic.
-- **WHAT WE REJECTED**: `EvaluatorFactory` class and dynamic reflection registries.
-- **WHY**: For a 2-day MVP, an additional factory abstraction introduced unnecessary complexity without adding value. Standard constructor injection of `RuleBasedEvaluator` and `AIEvaluator` inside `EvaluationService` is far simpler, cleaner, and fully adheres to the Open-Closed Principle (OCP).
+This document logs 5 key engineering decisions made during the development of the **CipherSchools LLD Practice Platform**. It details how AI assistance was leveraged during pair programming, what recommendations were accepted or modified, and the technical trade-offs behind each decision.
 
 ---
 
-## Decision 2: Submission Persistence vs Evaluation Order
+## Decision 1: Evaluator Extensibility Abstraction
 
-- **WHAT AI SUGGESTED**: Running evaluation in-memory first, and only persisting the submission and evaluation to SQLite together in a single atomic database transaction after AI evaluation finishes successfully.
-- **WHAT WE ACCEPTED**: Two-phase persistence: Persist `Submission` snapshot *first*, transition attempt state to `EVALUATING`, then run evaluation and record `Evaluation` output.
-- **WHAT WE REJECTED**: Atomic single-transaction save after AI response.
-- **WHY**: If the AI API experiences network timeouts, rate limits, or malformed outputs, saving after AI invocation risks losing the learner's entire submission text. Persisting the submission snapshot first ensures learner work is never lost.
+### Context
+We needed an extensible evaluation engine to score candidate Low-Level Design (LLD) submissions. The engine required AI integration (using Google Gemini) for subjective design-quality analysis (e.g., evaluating coupling, cohesion, and pattern choices) alongside an offline rule-based evaluator for structural validation.
+
+### What AI Suggested
+An elaborate `EvaluatorFactory` class with dynamic reflection, plugin registries, and multi-tenant module loaders for OpenAI, Anthropic, and Gemini services.
+
+### What I Accepted
+A simple `Evaluator` interface ([`evaluator.interface.ts`](file:///c:/Users/shubh/Desktop/CipherSchools/apps/api/src/evaluation/evaluator.interface.ts)) defining a unified `evaluate()` contract, implemented by `AIEvaluator` and `RuleBasedEvaluator`, orchestrated directly by `EvaluationService`.
+
+### What I Rejected or Changed
+Rejected the `EvaluatorFactory` class and reflection-based dynamic registries.
+
+### Why
+Adding a factory abstraction for two evaluators introduced unnecessary indirection. Direct constructor injection inside `EvaluationService` adheres strictly to the Open-Closed Principle (OCP) while keeping the codebase lightweight, readable, and easy to maintain.
+
+### Outcome
+Both `AIEvaluator` and `RuleBasedEvaluator` implement `Evaluator`. `EvaluationService` cleanly coordinates evaluation without extra factory boilerplate.
 
 ---
 
-## Decision 3: Deterministic Validation Gate before LLM Prompting
+## Decision 2: Submission Persistence and Failure Resilience
 
-- **WHAT AI SUGGESTED**: Sending all learner text inputs directly to the LLM and letting the LLM evaluate whether the submission was empty, incomplete, or malformed.
-- **WHAT WE ACCEPTED**: Stage 1 **Deterministic Validation Gate** in `RuleBasedEvaluator` checking mandatory fields, min character counts, and structural completeness before calling AI.
-- **WHAT WE REJECTED**: Relying on LLM for basic structural input validation.
-- **WHY**: Calling third-party LLMs for empty or 2-word submissions wastes API token quota and introduces unnecessary latency. Failing fast deterministically locally is cheaper, faster, and more reliable.
+### Context
+Evaluating LLD submissions relies on third-party LLM APIs, which can experience network latency, rate limits, or transient errors. We needed a workflow that prevents data loss if evaluation fails.
+
+### What AI Suggested
+Running AI evaluation in-memory first and saving both the submission text and evaluation output together in a single atomic database transaction after AI execution finishes.
+
+### What I Accepted
+A two-phase submission pipeline:
+1. Persist the `Submission` snapshot immediately to the database and update `Attempt` status to `EVALUATING`.
+2. Execute `AIEvaluator` inside a `try-catch` block, smoothly falling back to `RuleBasedEvaluator` if the API key is missing or the request fails.
+3. Save the resulting `Evaluation` and transition `Attempt` status to `COMPLETED`.
+
+### What I Rejected or Changed
+Rejected atomic single-transaction persistence executed after AI invocation.
+
+### Why
+If the AI API times out or fails, saving after AI invocation risks losing the candidate's typed design solution. Persisting the submission snapshot first guarantees candidate work is safely stored in the database regardless of evaluation outcome.
+*Trade-off*: Requires an initial database write before evaluation begins.
+
+### Outcome
+The `Submission` snapshot is persisted before calling `EvaluationService`. If Gemini is unavailable or throws an exception, the system catches the error, logs a safe message, and completes evaluation using `RuleBasedEvaluator`.
 
 ---
 
-## Decision 4: Rubric Structure & Score Normalization
+## Decision 3: Database Migration from SQLite to Containerized PostgreSQL
 
-- **WHAT AI SUGGESTED**: Allowing the LLM to return arbitrary floating-point scores, custom criterion names, and variable length arrays of criteria.
-- **WHAT WE ACCEPTED**: Fixed 8-dimension `RubricCriterion` enum with normalized integer scores (0 to 10 per criterion, 0 to 100 overall) and strict JSON schema validation.
-- **WHAT WE REJECTED**: Arbitrary LLM criterion keys and unvalidated score outputs.
-- **WHY**: Unvalidated LLM output can yield unpredictable scores (e.g. 15/10) or missing criteria. Enforcing strict enum validation guarantees consistent UI rendering across all 8 rubric cards.
+### Context
+The application initially used an SQLite file database (`dev.db`) for local prototyping. To better simulate production environments and handle concurrent read/write transactions cleanly, we needed a robust relational database setup.
+
+### What AI Suggested
+Installing a host-level PostgreSQL database instance on default port `5432` or configuring cloud database connections directly during local development.
+
+### What I Accepted
+Migrating the database provider in Prisma ([`schema.prisma`](file:///c:/Users/shubh/Desktop/CipherSchools/apps/api/prisma/schema.prisma)) from `"sqlite"` to `"postgresql"`, paired with a containerized PostgreSQL 16 service in [`docker-compose.yml`](file:///c:/Users/shubh/Desktop/CipherSchools/docker-compose.yml) mapped to host port `5433` (`5433:5432`).
+
+### What I Rejected or Changed
+Rejected host-level uncontainerized PostgreSQL installations and default port `5432` mapping.
+
+### Why
+Using Docker Compose ensures a reproducible database environment across machines. Mapping host port `5433` prevents port collisions with native PostgreSQL services running on developer host machines.
+*Trade-off*: SQLite required zero installation, whereas PostgreSQL via Docker requires Docker runtime on local development environments.
+
+### Outcome
+The platform runs PostgreSQL 16 in Docker, managed via Prisma ORM. Running `docker compose up -d` provides an isolated relational database ready for schema pushes and seeding.
+
+---
+
+## Decision 4: Frontend Production API Base Configuration
+
+### Context
+Preparing the Vite + React frontend for static hosting (e.g., Vercel) while ensuring local development continues to work seamlessly with the Vite dev server proxy (`/api`).
+
+### What AI Suggested
+Hardcoding production backend domain URLs in source code or adding server-side reverse-proxy configuration files (`vercel.json`).
+
+### What I Accepted
+Environment-driven API base URL resolution in [`api.ts`](file:///c:/Users/shubh/Desktop/CipherSchools/apps/web/src/services/api.ts):
+```typescript
+const rawBase = import.meta.env.VITE_API_BASE_URL || '/api';
+const API_BASE = rawBase.replace(/\/+$/, '');
+```
+paired with a clean [`apps/web/.env.example`](file:///c:/Users/shubh/Desktop/CipherSchools/apps/web/.env.example) template.
+
+### What I Rejected or Changed
+Rejected hardcoded production domain URLs and mandatory server-side rewrite rules.
+
+### Why
+This approach preserves zero-config local development (`/api` mapped via Vite proxy to `http://localhost:3000`), while allowing the frontend deployed on Vercel to later target a separately deployed backend URL via `VITE_API_BASE_URL`. Trimming trailing slashes prevents URL duplication issues (e.g., `/api/api/problems`).
+
+### Outcome
+Local development uses `/api` seamlessly via dev proxy. Production static builds accept `VITE_API_BASE_URL` without code modifications.
+
+---
+
+## Decision 5: Deterministic Validation Before Subjective Evaluation
+
+### Context
+Candidate submissions can sometimes be incomplete or missing mandatory sections. We needed to prevent invalid submissions from sending useless requests to third-party LLM APIs.
+
+### What AI Suggested
+Sending all raw candidate text directly to the LLM and instructing the prompt to detect whether sections were missing or too short.
+
+### What I Accepted
+A stage-1 **Deterministic Validation Gate** in `RuleBasedEvaluator` ([`rule-based-evaluator.service.ts`](file:///c:/Users/shubh/Desktop/CipherSchools/apps/api/src/evaluation/rule-based-evaluator.service.ts)) that enforces mandatory sections and minimum character lengths before any LLM request is initiated.
+
+### What I Rejected or Changed
+Rejected relying on the LLM for basic structural validation.
+
+### Why
+Delegating structural checks to an LLM wastes API quota and adds latency to invalid requests. Fast deterministic validation fails fast locally with clear HTTP 400 feedback.
+
+### Outcome
+Submissions must pass deterministic structural checks first. Once validated, subjective evaluation proceeds via `AIEvaluator` (or `RuleBasedEvaluator` fallback if AI is offline).
