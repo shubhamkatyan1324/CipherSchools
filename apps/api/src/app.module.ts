@@ -5,6 +5,8 @@ import { ProblemsModule } from './problems/problems.module';
 import { EvaluationModule } from './evaluation/evaluation.module';
 import { AttemptsModule } from './attempts/attempts.module';
 
+import { AppController } from './app.controller';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -16,5 +18,6 @@ import { AttemptsModule } from './attempts/attempts.module';
     EvaluationModule,
     AttemptsModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule { }
