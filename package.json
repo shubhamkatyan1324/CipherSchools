@@ -1,0 +1,23 @@
+{
+  "name": "lld-practice-platform-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -p \"[{name}]\" -n \"API,WEB\" -c \"cyan,magenta\" \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm --prefix apps/api run start:dev",
+    "dev:web": "npm --prefix apps/web run dev",
+    "start": "npm run dev",
+    "start:api": "npm --prefix apps/api run start:dev",
+    "start:web": "npm --prefix apps/web run dev",
+    "build:api": "npm --prefix apps/api run build",
+    "build:web": "npm --prefix apps/web run build",
+    "test:api": "npm --prefix apps/api run test",
+    "seed": "npm --prefix apps/api run seed"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

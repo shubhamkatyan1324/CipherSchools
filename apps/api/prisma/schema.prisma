@@ -1,0 +1,76 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Problem {
+  id             String    @id @default(uuid())
+  slug           String    @unique
+  title          String
+  difficulty     String    // EASY, MEDIUM, HARD
+  description    String
+  requirements   String    // JSON array of strings
+  constraints    String    // JSON array of strings
+  thinkingPoints String    // JSON array of strings
+  attempts       Attempt[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Attempt {
+  id          String       @id @default(uuid())
+  problemId   String
+  problem     Problem      @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  status      String       // IN_PROGRESS, SUBMITTED, EVALUATING, COMPLETED, FAILED
+  submissions Submission[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Submission {
+  id               String      @id @default(uuid())
+  attemptId        String
+  attempt          Attempt     @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  version          Int         @default(1)
+  requirements     String
+  assumptions      String
+  classes          String
+  responsibilities String
+  relationships    String
+  interfaces       String
+  decisions        String
+  edgeCases        String
+  pseudocode       String
+  evaluation       Evaluation?
+  createdAt        DateTime    @default(now())
+}
+
+model Evaluation {
+  id              String                @id @default(uuid())
+  submissionId    String                @unique
+  submission      Submission            @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  overallScore    Int
+  summary         String
+  strengths       String                // JSON array of strings
+  weaknesses      String                // JSON array of strings
+  recommendations String                // JSON array of strings
+  criteria        EvaluationCriterion[]
+  createdAt       DateTime              @default(now())
+}
+
+model EvaluationCriterion {
+  id           String     @id @default(uuid())
+  evaluationId String
+  evaluation   Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  criterionKey String
+  score        Int
+  maxScore     Int        @default(10)
+  evidence     String
+  concern      String
+  suggestion   String
+  confidence   Float      @default(1.0)
+}
