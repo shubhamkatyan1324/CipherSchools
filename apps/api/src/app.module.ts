@@ -10,6 +10,7 @@ import { AttemptsModule } from './attempts/attempts.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', 'apps/api/.env'],
+      ignoreEnvFile: process.env.NODE_ENV === 'production',
     }),
     PrismaModule,
     ProblemsModule,
