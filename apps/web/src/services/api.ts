@@ -1,7 +1,10 @@
 import { Problem, Attempt, CreateSubmissionPayload } from '../types';
 
-const rawBase = import.meta.env.VITE_API_BASE_URL || '/api';
-const API_BASE = rawBase.replace(/\/+$/, '');
+let rawBase = (import.meta.env.VITE_API_BASE_URL || '/api').trim().replace(/\/+$/, '');
+if (rawBase && !rawBase.endsWith('/api')) {
+  rawBase += '/api';
+}
+const API_BASE = rawBase;
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
