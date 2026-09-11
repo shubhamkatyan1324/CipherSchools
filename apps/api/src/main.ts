@@ -21,7 +21,7 @@ async function bootstrap() {
   );
 
   const port = process.env.PORT || 3000;
-  await app.listen(port, '0.0.0.0');
+  await app.listen(port);
   logger.log(`LLD Practice Platform API running on http://localhost:${port}/api`);
 }
 
